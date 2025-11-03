@@ -122,3 +122,54 @@ pub fn get_file_diff(commit_hash: &str, filename: &str) -> String {
         _ => "Unable to retrieve file content".to_string()
     }
 }
+
+pub fn get_all_branches() -> Vec<String> {
+    let output = Command::new("git")
+        .args(&["branch", "-a", "--format=%(refname:short)"])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            output_str
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        },
+        _ => Vec::new()
+    }
+}
+
+pub fn get_branch_commits(branch: &str, count: usize) -> Vec<Commit> {
+    let output = Command::new("git")
+        .args(&[
+            "log",
+            branch,
+            &format!("-{}", count),
+            "--pretty=format:%H|%an|%ad|%s",
+            "--date=short"
+        ])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            
+            output_str
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    Commit {
+                        hash: parts.get(0).unwrap_or(&"").to_string(),
+                        author: parts.get(1).unwrap_or(&"").to_string(),
+                        date: parts.get(2).unwrap_or(&"").to_string(),
+                        message: parts.get(3).unwrap_or(&"").to_string(),
+                    }
+                })
+                .collect()
+        },
+        _ => Vec::new()
+    }
+}
