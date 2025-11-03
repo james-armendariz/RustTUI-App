@@ -9,20 +9,22 @@ pub struct Commit {
     pub message: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct FileDiff {
+    pub filename: String,
+    pub diff: String,
+}
+
 pub fn get_current_branch() -> String {
     let output = Command::new("git")
         .args(&["branch", "--show-current"])
         .output();
     
     match output {
-        Ok(output) => {
-            if output.status.success() {
-                String::from_utf8_lossy(&output.stdout).trim().to_string()
-            } else {
-                "Not a git repository".to_string()
-            }
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
         },
-        Err(_) => "Git not found".to_string()
+        _ => "Not a git repository".to_string()
     }
 }
 
@@ -62,4 +64,61 @@ pub fn get_current_directory() -> String {
     env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "Unknown".to_string())
+}
+
+pub fn get_commit_stats(commit_hash: &str) -> String {
+    let output = Command::new("git")
+        .args(&["show", "--stat", "--pretty=format:", commit_hash])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        },
+        _ => "No stats available".to_string()
+    }
+}
+
+pub fn get_changed_files(commit_hash: &str) -> Vec<String> {
+    let output = Command::new("git")
+        .args(&["diff-tree", "--no-commit-id", "--name-only", "-r", commit_hash])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            
+            output_str
+                .lines()
+                .filter(|line| !line.is_empty())
+                // Filter out common build artifacts and system files
+                .filter(|line| {
+                    !line.contains("target/") &&
+                    !line.ends_with(".o") &&
+                    !line.ends_with(".rcgu.o") &&
+                    !line.contains(".git/")
+                })
+                .map(|s| s.to_string())
+                .collect()
+        },
+        _ => Vec::new()
+    }
+}
+
+pub fn get_file_diff(commit_hash: &str, filename: &str) -> String {
+    let output = Command::new("git")
+        .args(&["show", &format!("{}:{}", commit_hash, filename)])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let content = String::from_utf8_lossy(&output.stdout);
+            // Limit to first 1000 lines to prevent huge diffs
+            content.lines()
+                .take(1000)
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+        _ => "Unable to retrieve file content".to_string()
+    }
 }
