@@ -173,3 +173,105 @@ pub fn get_branch_commits(branch: &str, count: usize) -> Vec<Commit> {
         _ => Vec::new()
     }
 }
+
+pub fn search_commits(query: &str, max_results:usize) -> Vec<Commit> {
+    let output = Command::new("git")
+        .args(&[
+            "log",
+            &format!("-{}", max_results),
+            "--pretty=format:%H|%an|%ad|%s",
+            "--date=short",
+            &format!("--grep={}", query),
+            "-i"
+        ])
+            .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+
+            output_str
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    Commit {
+                        hash: parts.get(0).unwrap_or(&"").to_string(),
+                        author: parts.get(1).unwrap_or(&"").to_string(),
+                        date: parts.get(2).unwrap_or(&"").to_string(),
+                        message: parts.get(3).unwrap_or(&"").to_string(),
+                    }
+                })
+                .collect()
+        },
+        _ => Vec::new()
+    }
+}
+
+pub fn search_commits_by_author(author: &str, max_results: usize) -> Vec<Commit> {
+    let output = Command::new("git")
+        .args(&[
+            "log",
+            &format!("-{}", max_results),
+            "--pretty=format:%H|%an|%ad|%s",
+            "--date=short",
+            &format!("--author={}", author),
+            "-i"
+        ])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            
+            output_str
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    Commit {
+                        hash: parts.get(0).unwrap_or(&"").to_string(),
+                        author: parts.get(1).unwrap_or(&"").to_string(),
+                        date: parts.get(2).unwrap_or(&"").to_string(),
+                        message: parts.get(3).unwrap_or(&"").to_string(),
+                    }
+                })
+                .collect()
+        },
+        _ => Vec::new()
+    }
+}
+
+pub fn search_commits_by_file(filename: &str, max_results: usize) -> Vec<Commit> {
+    let output = Command::new("git")
+        .args(&[
+            "log",
+            &format!("-{}", max_results),
+            "--pretty=format:%H|%an|%ad|%s",
+            "--date=short",
+            "--",
+            filename
+        ])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            
+            output_str
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    Commit {
+                        hash: parts.get(0).unwrap_or(&"").to_string(),
+                        author: parts.get(1).unwrap_or(&"").to_string(),
+                        date: parts.get(2).unwrap_or(&"").to_string(),
+                        message: parts.get(3).unwrap_or(&"").to_string(),
+                    }
+                })
+                .collect()
+        },
+        _ => Vec::new()
+    }
+}

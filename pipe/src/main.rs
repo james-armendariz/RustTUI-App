@@ -1,20 +1,21 @@
 // src/main.rs
 mod git;
 
-use cursive::views::{Dialog, TextView, SelectView, LinearLayout, Panel, ScrollView};
-use cursive::view::{Resizable, Scrollable};
+use cursive::views::{Dialog, TextView, SelectView, LinearLayout, Panel, ScrollView, EditView};
+use cursive::view::{Resizable, Scrollable, Nameable};
 use cursive::{Cursive, CursiveExt};
 use git::Commit;
 
 fn main() {
     let mut siv = Cursive::default();
 
-    // Build the main view
     build_main_view(&mut siv);
     
     // Add global keyboard shortcuts
     siv.add_global_callback('q', |s| s.quit());
     siv.add_global_callback('b', show_branch_selector);
+    siv.add_global_callback('s', show_search_dialog);  // New: search shortcut
+    siv.add_global_callback('/', show_search_dialog);  // Alternative search key
     
     siv.run();
 }
@@ -22,7 +23,7 @@ fn main() {
 fn build_main_view(siv: &mut Cursive) {
     let current_dir = git::get_current_directory();
     let branch = git::get_current_branch();
-    let commits = git::get_commits(20);  // Show more commits
+    let commits = git::get_commits(20);
 
     let mut select = SelectView::new();
     
@@ -51,12 +52,124 @@ fn build_main_view(siv: &mut Cursive) {
     let mut layout = LinearLayout::vertical();
     layout.add_child(TextView::new(format!("📁 Directory: {}", current_dir)));
     layout.add_child(TextView::new(format!("🌿 Branch: {}", branch)));
-    layout.add_child(TextView::new("\nPress 'b' to switch branches, 'q' to quit\n"));
+    layout.add_child(TextView::new("\nShortcuts: 'b' = branches | 's' or '/' = search | 'q' = quit\n"));
     layout.add_child(Panel::new(select.scrollable()).title("Commits"));
 
     siv.add_layer(
         Dialog::around(layout)
             .title("Git Repository Explorer"),
+    );
+}
+
+fn show_search_dialog(siv: &mut Cursive) {
+    let mut select = SelectView::new();
+    select.add_item("Search by commit message", "message");
+    select.add_item("Search by author", "author");
+    select.add_item("Search by filename", "file");
+    
+    select.set_on_submit(|s, search_type: &str| {
+        s.pop_layer();  // Close search type selector
+        show_search_input(s, search_type);
+    });
+    
+    siv.add_layer(
+        Dialog::around(select)
+            .title("Search Commits")
+            .button("Cancel", |s| {
+                s.pop_layer();
+            }),
+    );
+}
+
+fn show_search_input(siv: &mut Cursive, search_type: &str) {
+    let search_type = search_type.to_string();
+    let search_type_clone = search_type.clone();  // Clone for the second closure
+    
+    let prompt = match search_type.as_str() {
+        "message" => "Enter search term for commit messages:",
+        "author" => "Enter author name:",
+        "file" => "Enter filename (e.g., src/main.rs):",
+        _ => "Enter search term:",
+    };
+    
+    let edit = EditView::new()
+        .on_submit(move |s, query| {
+            perform_search(s, &search_type, query);  // First closure uses search_type
+        })
+        .with_name("search_input");
+    
+    siv.add_layer(
+        Dialog::around(
+            LinearLayout::vertical()
+                .child(TextView::new(prompt))
+                .child(TextView::new(""))
+                .child(edit)
+        )
+        .title("Search")
+        .button("Search", move |s| {  // Second closure uses search_type_clone
+            let query = s
+                .call_on_name("search_input", |view: &mut EditView| {
+                    view.get_content()
+                })
+                .unwrap();
+            perform_search(s, &search_type_clone, &query);
+        })
+        .button("Cancel", |s| {
+            s.pop_layer();
+        }),
+    );
+}
+
+fn perform_search(siv: &mut Cursive, search_type: &str, query: &str) {
+    if query.trim().is_empty() {
+        return;
+    }
+    
+    let results = match search_type {
+        "message" => git::search_commits(query, 50),
+        "author" => git::search_commits_by_author(query, 50),
+        "file" => git::search_commits_by_file(query, 50),
+        _ => Vec::new(),
+    };
+    
+    // Close search dialog
+    siv.pop_layer();
+    
+    // Show results
+    let mut select = SelectView::new();
+    
+    if results.is_empty() {
+        select.add_item(
+            format!("No results found for '{}'", query),
+            Commit {
+                hash: "".to_string(),
+                author: "".to_string(),
+                date: "".to_string(),
+                message: "".to_string(),
+            }
+        );
+    } else {
+        for commit in results {
+            select.add_item(
+                format!("{} - {} - {}", 
+                    &commit.hash[..7], 
+                    commit.date,
+                    commit.message
+                ),
+                commit
+            );
+        }
+    }
+    
+    select.set_on_submit(show_commit_details);
+    
+    siv.add_layer(
+        Dialog::around(select.scrollable())
+            .title(format!("Search Results: '{}'", query))
+            .button("Close", |s| {
+                s.pop_layer();
+            })
+            .min_height(20),
     );
 }
 
@@ -91,18 +204,14 @@ fn show_branch_selector(siv: &mut Cursive) {
             .button("Cancel", |s| {
                 s.pop_layer();
             })
-            .max_height(20),
+            .min_height(20),
     );
 }
 
 fn switch_to_branch(siv: &mut Cursive, branch: &str) {
-    // Close the branch selector dialog
+    siv.pop_layer();
     siv.pop_layer();
     
-    // Clear the main view
-    siv.pop_layer();
-    
-    // Show commits from the selected branch
     let current_dir = git::get_current_directory();
     let commits = git::get_branch_commits(branch, 20);
 
@@ -133,7 +242,7 @@ fn switch_to_branch(siv: &mut Cursive, branch: &str) {
     let mut layout = LinearLayout::vertical();
     layout.add_child(TextView::new(format!("📁 Directory: {}", current_dir)));
     layout.add_child(TextView::new(format!("🌿 Branch: {}", branch)));
-    layout.add_child(TextView::new("\nPress 'b' to switch branches, 'q' to quit\n"));
+    layout.add_child(TextView::new("\nShortcuts: 'b' = branches | 's' or '/' = search | 'q' = quit\n"));
     layout.add_child(Panel::new(select.scrollable()).title("Commits"));
 
     siv.add_layer(
